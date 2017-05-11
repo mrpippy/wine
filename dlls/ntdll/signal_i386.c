@@ -476,6 +476,9 @@ static ULONG first_ldt_entry = 32;
 
 static wine_signal_handler handlers[256];
 
+extern void DECLSPEC_NORETURN __wine_syscall_dispatcher( void );
+extern NTSTATUS WINAPI __syscall_NtGetContextThread( HANDLE handle, CONTEXT *context );
+
 enum i386_trap_code
 {
     TRAP_x86_UNKNOWN    = -1,  /* Unknown fault (TRAP_sig not defined) */
@@ -1514,7 +1517,7 @@ NTSTATUS CDECL DECLSPEC_HIDDEN __regs_NtGetContextThread( DWORD edi, DWORD esi, 
         {
             context->Ebp    = ebp;
             context->Esp    = (DWORD)&retaddr;
-            context->Eip    = *(&edi - 1);
+            context->Eip    = (DWORD)__syscall_NtGetContextThread + 18;
             context->SegCs  = get_cs();
             context->SegSs  = get_ds();
             context->EFlags = eflags;
@@ -2560,6 +2563,8 @@ NTSTATUS signal_alloc_thread( TEB *teb )
         thread_data->fs = (idx << 3) | 7;
     }
     else thread_data->fs = gdt_fs_sel;
+
+    teb->WOW32Reserved = __wine_syscall_dispatcher;
 
     return STATUS_SUCCESS;
 }
