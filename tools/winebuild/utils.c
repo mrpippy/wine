@@ -549,7 +549,7 @@ size_t output_buffer_size;
 struct label
 {
     struct list entry;
-    const char *name;
+    char *name;
     size_t pos;
     size_t rva;
 };
@@ -567,7 +567,7 @@ struct label *get_label( const char *name )
     }
 
     label = xmalloc( sizeof(*label) );
-    label->name = name;
+    label->name = xstrdup( name );
     label->pos = 0;
     label->rva = 0;
 
@@ -619,6 +619,7 @@ void free_labels( void )
     LIST_FOR_EACH_ENTRY_SAFE( label, label2, &labels, struct label, entry )
     {
         list_remove( &label->entry );
+        free( label->name );
         free( label );
     }
 }
@@ -748,6 +749,11 @@ void put_pword( unsigned int val )
 {
     if (get_ptr_size() == 8) put_qword( val );
     else put_dword( val );
+}
+
+void put_str( const char *str )
+{
+    put_data( str, strlen(str) + 1 );
 }
 
 void align_output( unsigned int align )
