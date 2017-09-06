@@ -59,6 +59,8 @@ struct _KUSER_SHARED_DATA *user_shared_data = NULL;
 static size_t user_shared_data_size;
 static const WCHAR default_windirW[] = {'C',':','\\','w','i','n','d','o','w','s',0};
 
+extern void DECLSPEC_NORETURN __wine_syscall_dispatcher( void );
+
 void (WINAPI *kernel32_start_process)(LPTHREAD_START_ROUTINE,void*) = NULL;
 
 /* info passed to a starting thread */
@@ -294,7 +296,7 @@ TEB *thread_init(void)
     /* reserve space for shared user data */
 
     addr = (void *)0x7ffe0000;
-    size = 0x1000;
+    size = 0x2000;
     status = NtAllocateVirtualMemory( NtCurrentProcess(), &addr, 0, &size,
                                       MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE );
     if (status)
@@ -303,7 +305,7 @@ TEB *thread_init(void)
         exit(1);
     }
     user_shared_data = addr;
-    user_shared_data_size = size;
+    user_shared_data_size = 0x1000;
     memcpy( user_shared_data->NtSystemRoot, default_windirW, sizeof(default_windirW) );
 
     /* allocate and initialize the PEB and initial TEB */
@@ -332,6 +334,14 @@ TEB *thread_init(void)
     InitializeListHead( &ldr.InMemoryOrderModuleList );
     InitializeListHead( &ldr.InInitializationOrderModuleList );
     *(ULONG_PTR *)peb->Reserved = get_image_addr();
+
+#if defined(__APPLE__) && defined(__x86_64__)
+    *((DWORD*)((char*)user_shared_data + 0x1000)) = __wine_syscall_dispatcher;
+#endif
+
+    /* Pretend we don't support the SYSCALL instruction on x86-64. Needed for
+     * Chromium; see output_syscall_thunks_x64() in winebuild. */
+    user_shared_data->SystemCallPad[0] = 1;
 
     /*
      * Starting with Vista, the first user to log on has session id 1.
