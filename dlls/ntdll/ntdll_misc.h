@@ -349,4 +349,12 @@ static inline void ascii_to_unicode( WCHAR *dst, const char *src, size_t len )
     while (len--) *dst++ = (unsigned char)*src++;
 }
 
+#if defined(__i386__) || defined(__x86_64__)
+NTSTATUS WINAPI __syscall_NtOpenFile( PHANDLE handle, ACCESS_MASK access,
+                            POBJECT_ATTRIBUTES attr, PIO_STATUS_BLOCK io,
+                            ULONG sharing, ULONG options );
+#else
+#define __syscall_NtOpenFile NtOpenFile
+#endif
+
 #endif
