@@ -1266,7 +1266,7 @@ static NTSTATUS alloc_thread_tls(void)
 /*************************************************************************
  *              call_tls_callbacks
  */
-static void call_tls_callbacks( HMODULE module, UINT reason )
+static void call_tls_callbacks( HMODULE module, WCHAR *mod_name, UINT reason )
 {
     const IMAGE_TLS_DIRECTORY *dir;
     const PIMAGE_TLS_CALLBACK *callback;
@@ -1276,6 +1276,16 @@ static void call_tls_callbacks( HMODULE module, UINT reason )
 
     dir = RtlImageDirectoryEntryToData( module, TRUE, IMAGE_DIRECTORY_ENTRY_TLS, &dirsize );
     if (!dir || !dir->AddressOfCallBacks) return;
+
+    {
+        static const WCHAR rdr2[] = {'R','D','R','2','.','e','x','e',0};
+        if (reason != DLL_PROCESS_ATTACH && !strcmpW(mod_name, rdr2))
+        {
+            TRACE_(relay)("\1Skipping RDR2.exe TLS callback (module=%p,reason=%s)\n",
+                          module, reason_names[reason] );
+            return;
+        }
+    }
 
     for (callback = (const PIMAGE_TLS_CALLBACK *)dir->AddressOfCallBacks; *callback; callback++)
     {
@@ -1311,8 +1321,14 @@ static NTSTATUS MODULE_InitDLL( WINE_MODREF *wm, UINT reason, LPVOID lpReserved 
 
     /* Skip calls for modules loaded with special load flags */
 
+    {
+        size_t len = min( wm->ldr.BaseDllName.Length, sizeof(mod_name)-sizeof(WCHAR) );
+        memcpy( mod_name, wm->ldr.BaseDllName.Buffer, len );
+        mod_name[len / sizeof(WCHAR)] = 0;
+    }
+
     if (wm->ldr.Flags & LDR_DONT_RESOLVE_REFS) return STATUS_SUCCESS;
-    if (wm->ldr.TlsIndex != -1) call_tls_callbacks( wm->ldr.BaseAddress, reason );
+    if (wm->ldr.TlsIndex != -1) call_tls_callbacks( wm->ldr.BaseAddress, mod_name, reason );
     if (!entry || !(wm->ldr.Flags & LDR_IMAGE_IS_DLL)) return STATUS_SUCCESS;
 
     if (TRACE_ON(relay))

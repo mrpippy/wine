@@ -996,6 +996,18 @@ BOOL WINAPI DECLSPEC_HOTPATCH TerminateProcess( HANDLE handle, DWORD exit_code )
         SetLastError( ERROR_INVALID_HANDLE );
         return FALSE;
     }
+
+    /* HACK: RDR2 */
+    if (handle == (HANDLE)-1)
+    {
+       static int once = 1;
+       char buf[256];
+       GetModuleFileNameA(NULL, buf, sizeof(buf));
+       ERR("TerminateProcess: %s\n", buf);
+       if (strstr(buf, "RDR2.exe") && once--)
+           return TRUE;
+    }
+
     return set_ntstatus( NtTerminateProcess( handle, exit_code ));
 }
 
