@@ -1263,6 +1263,20 @@ void WINAPI wine_vkGetPhysicalDeviceExternalSemaphorePropertiesKHR(VkPhysicalDev
     properties->externalSemaphoreFeatures = 0;
 }
 
+void WINAPI wine_vkGetPhysicalDeviceProperties2(VkPhysicalDevice physical_device,
+        VkPhysicalDeviceProperties2 *properties)
+{
+    TRACE("%p, %p\n", physical_device, properties);
+    thunk_vkGetPhysicalDeviceProperties2(physical_device, properties);
+}
+
+void WINAPI wine_vkGetPhysicalDeviceProperties2KHR(VkPhysicalDevice physical_device,
+        VkPhysicalDeviceProperties2 *properties)
+{
+    TRACE("%p, %p\n", physical_device, properties);
+    thunk_vkGetPhysicalDeviceProperties2KHR(physical_device, properties);
+}
+
 BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, void *reserved)
 {
     TRACE("%p, %u, %p\n", hinst, reason, reserved);
