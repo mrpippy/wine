@@ -93,6 +93,10 @@ static VkBool32 (*pvkGetPhysicalDeviceXlibPresentationSupportKHR)(VkPhysicalDevi
 static VkResult (*pvkGetSwapchainImagesKHR)(VkDevice, VkSwapchainKHR, uint32_t *, VkImage *);
 static VkResult (*pvkQueuePresentKHR)(VkQueue, const VkPresentInfoKHR *);
 
+/* Functions only available through vkGetInstanceProcAddress */
+static VkResult (*pvkGetPhysicalDeviceSurfaceCapabilities2KHR)(VkPhysicalDevice, const VkPhysicalDeviceSurfaceInfo2KHR *, VkSurfaceCapabilities2KHR *);
+static VkResult (*pvkGetPhysicalDeviceSurfaceFormats2KHR)(VkPhysicalDevice, const VkPhysicalDeviceSurfaceInfo2KHR *, uint32_t *, VkSurfaceFormat2KHR *);
+
 static void *X11DRV_get_vk_device_proc_addr(const char *name);
 static void *X11DRV_get_vk_instance_proc_addr(VkInstance instance, const char *name);
 
@@ -245,6 +249,12 @@ static VkResult X11DRV_vkCreateInstance(const VkInstanceCreateInfo *create_info,
     res = pvkCreateInstance(&create_info_host, NULL /* allocator */, instance);
 
     heap_free((void *)create_info_host.ppEnabledExtensionNames);
+
+    if (res == VK_SUCCESS && !pvkGetPhysicalDeviceSurfaceCapabilities2KHR)
+        pvkGetPhysicalDeviceSurfaceCapabilities2KHR = pvkGetInstanceProcAddr(*instance, "vkGetPhysicalDeviceSurfaceCapabilities2KHR");
+    if (res == VK_SUCCESS && !pvkGetPhysicalDeviceSurfaceFormats2KHR)
+        pvkGetPhysicalDeviceSurfaceFormats2KHR = pvkGetInstanceProcAddr(*instance, "vkGetPhysicalDeviceSurfaceFormats2KHR");
+
     return res;
 }
 
@@ -456,6 +466,18 @@ static VkResult X11DRV_vkGetPhysicalDevicePresentRectanglesKHR(VkPhysicalDevice 
     return pvkGetPhysicalDevicePresentRectanglesKHR(phys_dev, x11_surface->surface, count, rects);
 }
 
+static VkResult X11DRV_vkGetPhysicalDeviceSurfaceCapabilities2KHR(VkPhysicalDevice phys_dev,
+        const VkPhysicalDeviceSurfaceInfo2KHR *surface_info, VkSurfaceCapabilities2KHR *capabilities)
+{
+    VkPhysicalDeviceSurfaceInfo2KHR surface_info_host;
+    TRACE("%p, %p, %p\n", phys_dev, surface_info, capabilities);
+
+    surface_info_host = *surface_info;
+    surface_info_host.surface = surface_from_handle(surface_info->surface)->surface;
+
+    return pvkGetPhysicalDeviceSurfaceCapabilities2KHR(phys_dev, &surface_info_host, capabilities);
+}
+
 static VkResult X11DRV_vkGetPhysicalDeviceSurfaceCapabilitiesKHR(VkPhysicalDevice phys_dev,
         VkSurfaceKHR surface, VkSurfaceCapabilitiesKHR *capabilities)
 {
@@ -464,6 +486,18 @@ static VkResult X11DRV_vkGetPhysicalDeviceSurfaceCapabilitiesKHR(VkPhysicalDevic
     TRACE("%p, 0x%s, %p\n", phys_dev, wine_dbgstr_longlong(surface), capabilities);
 
     return pvkGetPhysicalDeviceSurfaceCapabilitiesKHR(phys_dev, x11_surface->surface, capabilities);
+}
+
+static VkResult X11DRV_vkGetPhysicalDeviceSurfaceFormats2KHR(VkPhysicalDevice phys_dev,
+        const VkPhysicalDeviceSurfaceInfo2KHR *surface_info, uint32_t *count, VkSurfaceFormat2KHR *formats)
+{
+    VkPhysicalDeviceSurfaceInfo2KHR surface_info_host = *surface_info;
+    TRACE("%p, %p, %p, %p\n", phys_dev, surface_info, count, formats);
+
+    surface_info_host = *surface_info;
+    surface_info_host.surface = surface_from_handle(surface_info->surface)->surface;
+
+    return pvkGetPhysicalDeviceSurfaceFormats2KHR(phys_dev, &surface_info_host, count, formats);
 }
 
 static VkResult X11DRV_vkGetPhysicalDeviceSurfaceFormatsKHR(VkPhysicalDevice phys_dev,
@@ -557,7 +591,9 @@ static const struct vulkan_funcs vulkan_funcs =
     X11DRV_vkGetDeviceProcAddr,
     X11DRV_vkGetInstanceProcAddr,
     X11DRV_vkGetPhysicalDevicePresentRectanglesKHR,
+    X11DRV_vkGetPhysicalDeviceSurfaceCapabilities2KHR,
     X11DRV_vkGetPhysicalDeviceSurfaceCapabilitiesKHR,
+    X11DRV_vkGetPhysicalDeviceSurfaceFormats2KHR,
     X11DRV_vkGetPhysicalDeviceSurfaceFormatsKHR,
     X11DRV_vkGetPhysicalDeviceSurfacePresentModesKHR,
     X11DRV_vkGetPhysicalDeviceSurfaceSupportKHR,
