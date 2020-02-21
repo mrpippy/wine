@@ -1267,6 +1267,16 @@ void WINAPI wine_vkGetPhysicalDeviceExternalSemaphorePropertiesKHR(VkPhysicalDev
     properties->externalSemaphoreFeatures = 0;
 }
 
+void WINAPI wine_vkGetPhysicalDeviceProperties(VkPhysicalDevice physical_device,
+        VkPhysicalDeviceProperties *properties)
+{
+    TRACE("%p, %p\n", physical_device, properties);
+    thunk_vkGetPhysicalDeviceProperties(physical_device, properties);
+
+    if (properties->vendorID == 0x10de)
+        properties->vendorID = 0x1002;
+}
+
 static BOOL get_luid_for_device_uuid(const UUID *uuid, LUID *luid)
 {
     UINT i = 0;
@@ -1324,6 +1334,9 @@ void WINAPI wine_vkGetPhysicalDeviceProperties2(VkPhysicalDevice physical_device
             WARN("Failed to find corresponding adapter LUID for device UUID %s.\n", debugstr_guid(deviceUUID));
         }
     }
+
+    if (properties->properties.vendorID == 0x10de)
+        properties->properties.vendorID = 0x1002;
 }
 
 void WINAPI wine_vkGetPhysicalDeviceProperties2KHR(VkPhysicalDevice physical_device,
@@ -1348,6 +1361,9 @@ void WINAPI wine_vkGetPhysicalDeviceProperties2KHR(VkPhysicalDevice physical_dev
             WARN("Failed to find corresponding adapter LUID for device UUID %s.\n", debugstr_guid(deviceUUID));
         }
     }
+
+    if (properties->properties.vendorID == 0x10de)
+        properties->properties.vendorID = 0x1002;
 }
 
 BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, void *reserved)
