@@ -1,6 +1,6 @@
 MODULE    = winevulkan.dll
 IMPORTLIB = winevulkan
-IMPORTS   = user32 gdi32
+IMPORTS   = dxgi user32 gdi32
 
 C_SRCS = \
 	vulkan.c \

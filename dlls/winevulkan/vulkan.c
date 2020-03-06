@@ -19,9 +19,15 @@
 
 #include <stdarg.h>
 
+#define COBJMACROS
 #include "windef.h"
 #include "winbase.h"
 #include "winuser.h"
+
+#include "initguid.h"
+#include "dxgi.h"
+#include "wine/wined3d.h"
+#include "wine/winedxgi.h"
 
 #include "vulkan_private.h"
 
@@ -1259,6 +1265,89 @@ void WINAPI wine_vkGetPhysicalDeviceExternalSemaphorePropertiesKHR(VkPhysicalDev
     properties->exportFromImportedHandleTypes = 0;
     properties->compatibleHandleTypes = 0;
     properties->externalSemaphoreFeatures = 0;
+}
+
+static BOOL get_luid_for_device_uuid(const UUID *uuid, LUID *luid)
+{
+    UINT i = 0;
+    BOOL found = FALSE;
+    IDXGIFactory *factory = NULL;
+    IDXGIAdapter *adapter = NULL;
+
+    if (FAILED(CreateDXGIFactory(&IID_IDXGIFactory, (void **)&factory))) return FALSE;
+
+    while (!found && IDXGIFactory_EnumAdapters(factory, i, &adapter) != DXGI_ERROR_NOT_FOUND)
+    {
+        IWineDXGIAdapter *wine_adapter = NULL;
+        if (SUCCEEDED(IUnknown_QueryInterface(adapter, &IID_IWineDXGIAdapter, (void **)&wine_adapter)))
+        {
+            struct wine_dxgi_adapter_info adapter_info;
+            if (SUCCEEDED(IWineDXGIAdapter_get_adapter_info(wine_adapter, &adapter_info)))
+            {
+                if (IsEqualGUID(uuid, &adapter_info.device_uuid))
+                {
+                    *luid = adapter_info.luid;
+                    found = TRUE;
+                }
+            }
+
+            IWineDXGIAdapter_Release(wine_adapter);
+        }
+
+        IDXGIAdapter_Release(adapter);
+        i++;
+    }
+
+    if (factory) IDXGIFactory_Release(factory);
+    return found;
+}
+
+void WINAPI wine_vkGetPhysicalDeviceProperties2(VkPhysicalDevice physical_device,
+        VkPhysicalDeviceProperties2 *properties)
+{
+    VkPhysicalDeviceIDProperties *idprops;
+
+    TRACE("%p, %p\n", physical_device, properties);
+    thunk_vkGetPhysicalDeviceProperties2(physical_device, properties);
+
+    if ((idprops = wine_vk_find_struct(properties, PHYSICAL_DEVICE_ID_PROPERTIES)))
+    {
+        UUID *deviceUUID = (UUID *)idprops->deviceUUID;
+        LUID *luid = (LUID *)idprops->deviceLUID;
+        if (get_luid_for_device_uuid(deviceUUID, luid))
+        {
+            idprops->deviceNodeMask = 1;
+            idprops->deviceLUIDValid = VK_TRUE;
+        }
+        else
+        {
+            WARN("Failed to find corresponding adapter LUID for device UUID %s.\n", debugstr_guid(deviceUUID));
+        }
+    }
+}
+
+void WINAPI wine_vkGetPhysicalDeviceProperties2KHR(VkPhysicalDevice physical_device,
+        VkPhysicalDeviceProperties2 *properties)
+{
+    VkPhysicalDeviceIDProperties *idprops;
+
+    TRACE("%p, %p\n", physical_device, properties);
+    thunk_vkGetPhysicalDeviceProperties2KHR(physical_device, properties);
+
+    if ((idprops = wine_vk_find_struct(properties, PHYSICAL_DEVICE_ID_PROPERTIES)))
+    {
+        UUID *deviceUUID = (UUID *)idprops->deviceUUID;
+        LUID *luid = (LUID *)idprops->deviceLUID;
+        if (get_luid_for_device_uuid(deviceUUID, luid))
+        {
+            idprops->deviceNodeMask = 1;
+            idprops->deviceLUIDValid = VK_TRUE;
+        }
+        else
+        {
+            WARN("Failed to find corresponding adapter LUID for device UUID %s.\n", debugstr_guid(deviceUUID));
+        }
+    }
 }
 
 BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, void *reserved)
