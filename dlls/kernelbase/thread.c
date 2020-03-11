@@ -420,7 +420,7 @@ HRESULT WINAPI DECLSPEC_HOTPATCH SetThreadDescription( HANDLE thread, PCWSTR des
     THREAD_DESCRIPTION_INFORMATION info;
     int length;
 
-    TRACE( "(%p, %s)\n", thread, debugstr_w( description ));
+    ERR( "(%p, %s)\n", thread, debugstr_w( description ));
 
     length = description ? lstrlenW( description ) * sizeof(WCHAR) : 0;
 
@@ -559,6 +559,7 @@ BOOL WINAPI DECLSPEC_HOTPATCH SetThreadLocale( LCID lcid )
 BOOL WINAPI DECLSPEC_HOTPATCH SetThreadPriority( HANDLE thread, INT priority )
 {
     DWORD prio = priority;
+    TRACE( "(%p, %d)\n", thread, priority );
     return set_ntstatus( NtSetInformationThread( thread, ThreadBasePriority, &prio, sizeof(prio) ));
 }
 

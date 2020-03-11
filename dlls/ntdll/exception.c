@@ -119,6 +119,15 @@ void wait_suspend( CONTEXT *context )
     errno = saved_errno;
 }
 
+/* "How to: Set a Thread Name in Native Code"
+ * https://msdn.microsoft.com/en-us/library/xcb2z8hs.aspx */
+typedef struct tagTHREADNAME_INFO
+{
+   DWORD   dwType;     /* Must be 0x1000 */
+   LPCSTR  szName;     /* Pointer to name - limited to 9 bytes (8 characters + terminator) */
+   DWORD   dwThreadID; /* Thread ID (-1 = caller thread) */
+   DWORD   dwFlags;    /* Reserved for future use.  Must be zero. */
+} THREADNAME_INFO;
 
 /**********************************************************************
  *           send_debug_event
@@ -134,6 +143,13 @@ NTSTATUS send_debug_event( EXCEPTION_RECORD *rec, int first_chance, CONTEXT *con
     CONTEXT exception_context = *context;
     select_op_t select_op;
     sigset_t old_set;
+
+    if (rec->ExceptionCode == 0x406d1388)
+    {
+        const THREADNAME_INFO *threadname = (const THREADNAME_INFO *)rec->ExceptionInformation;
+
+        ERR("thread %x name %s\n", threadname->dwThreadID, threadname->szName);
+    }
 
     if (!NtCurrentTeb()->Peb->BeingDebugged) return 0;  /* no debugger present */
 
