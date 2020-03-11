@@ -3344,13 +3344,105 @@ LONG WINAPI ChangeDisplaySettingsExW( LPCWSTR devname, LPDEVMODEW devmode, HWND 
     return USER_Driver->pChangeDisplaySettingsEx(devname, devmode, hwnd, flags, lparam);
 }
 
+/**********************************************************************
+ *              GetDisplayConfigBufferSizes (USER32.@)
+ */
+LONG WINAPI GetDisplayConfigBufferSizes( UINT32 flags, UINT32 *num_path_info, UINT32 *num_mode_info )
+{
+    FIXME("(0x%x %p %p): stub\n", flags, num_path_info, num_mode_info);
+
+    if (!num_path_info || !num_mode_info)
+        return ERROR_INVALID_PARAMETER;
+
+    *num_path_info = 0;
+    *num_mode_info = 0;
+    return ERROR_NOT_SUPPORTED;
+}
+
+/***********************************************************************
+ *              QueryDisplayConfig (USER32.@)
+ */
+LONG WINAPI QueryDisplayConfig( UINT32 flags, UINT32 *numpathelements, DISPLAYCONFIG_PATH_INFO *pathinfo,
+                                UINT32 *numinfoelements, DISPLAYCONFIG_MODE_INFO *modeinfo,
+                                DISPLAYCONFIG_TOPOLOGY_ID *topologyid )
+{
+   ERR("(%08x %p %p %p %p %p)\n", flags, numpathelements, pathinfo, numinfoelements, modeinfo, topologyid);
+   if ((*numpathelements < 1) || (*numinfoelements < 2))
+        return ERROR_INSUFFICIENT_BUFFER;
+
+ERR("pathsize %d modesize %d\n", sizeof(DISPLAYCONFIG_PATH_INFO), sizeof(DISPLAYCONFIG_MODE_INFO));
+ERR("targetsize %d sizeot %d\n", sizeof(DISPLAYCONFIG_PATH_TARGET_INFO), sizeof(DISPLAYCONFIG_VIDEO_OUTPUT_TECHNOLOGY));
+ERR("offsetrr %d\n", offsetof(DISPLAYCONFIG_PATH_TARGET_INFO, refreshRate));
+   *numpathelements = 1;
+   pathinfo[0].sourceInfo.adapterId.LowPart = 0x3f5;
+   pathinfo[0].sourceInfo.adapterId.HighPart = 0;
+   pathinfo[0].sourceInfo.id = 0;
+   pathinfo[0].sourceInfo.u.modeInfoIdx = 1;
+   pathinfo[0].sourceInfo.statusFlags = 1;
+   pathinfo[0].targetInfo.adapterId.LowPart = 0x3f5;
+   pathinfo[0].targetInfo.adapterId.HighPart = 0;
+   pathinfo[0].targetInfo.id = 67568640;
+   pathinfo[0].targetInfo.u.modeInfoIdx = 0;
+   pathinfo[0].targetInfo.outputTechnology = DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DISPLAYPORT_EXTERNAL;
+   pathinfo[0].targetInfo.rotation = 1;
+   pathinfo[0].targetInfo.scaling = 1;
+   pathinfo[0].targetInfo.refreshRate.Numerator = 60;
+   pathinfo[0].targetInfo.refreshRate.Denominator = 1;
+   pathinfo[0].targetInfo.scanLineOrdering = 1;
+   pathinfo[0].targetInfo.targetAvailable = 1;
+   pathinfo[0].targetInfo.statusFlags = 1;
+   pathinfo[0].flags = 1;
+
+   *numinfoelements = 2;
+   modeinfo[0].infoType = DISPLAYCONFIG_MODE_INFO_TYPE_TARGET;
+   modeinfo[0].id = 67568640;
+   modeinfo[0].adapterId.LowPart = 0x3f5;
+   modeinfo[0].adapterId.HighPart = 0;
+   modeinfo[0].u.targetMode.targetVideoSignalInfo.pixelRate = 136100000;
+   modeinfo[0].u.targetMode.targetVideoSignalInfo.hSyncFreq.Numerator = 65432;
+   modeinfo[0].u.targetMode.targetVideoSignalInfo.hSyncFreq.Denominator = 1;
+   modeinfo[0].u.targetMode.targetVideoSignalInfo.vSyncFreq.Numerator = 60;
+   modeinfo[0].u.targetMode.targetVideoSignalInfo.vSyncFreq.Denominator = 1;
+   modeinfo[0].u.targetMode.targetVideoSignalInfo.activeSize.cx = 2560;
+   modeinfo[0].u.targetMode.targetVideoSignalInfo.activeSize.cy = 1440;
+   modeinfo[0].u.targetMode.targetVideoSignalInfo.totalSize.cx = 2560;
+   modeinfo[0].u.targetMode.targetVideoSignalInfo.totalSize.cy = 1440;
+   modeinfo[0].u.targetMode.targetVideoSignalInfo.scanLineOrdering = 1;
+
+   modeinfo[1].infoType = DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE;
+   modeinfo[1].id = 0;
+   modeinfo[1].adapterId.LowPart = 0x3f5;
+   modeinfo[1].adapterId.HighPart = 0;
+   modeinfo[1].u.sourceMode.width = 2560;
+   modeinfo[1].u.sourceMode.height = 1440;
+   modeinfo[1].u.sourceMode.pixelFormat = 4;
+   modeinfo[1].u.sourceMode.position.x = 0;
+   modeinfo[1].u.sourceMode.position.y = 0;
+
+   return ERROR_SUCCESS;
+}
 
 /***********************************************************************
  *              DisplayConfigGetDeviceInfo (USER32.@)
  */
-LONG WINAPI DisplayConfigGetDeviceInfo(DISPLAYCONFIG_DEVICE_INFO_HEADER *packet)
+LONG WINAPI DisplayConfigGetDeviceInfo( DISPLAYCONFIG_DEVICE_INFO_HEADER *packet )
 {
-    FIXME("stub: %p\n", packet);
+    ERR("stub: %p %d\n", packet, packet->type);
+    switch (packet->type)
+    {
+        case DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME:
+        {
+            DISPLAYCONFIG_SOURCE_DEVICE_NAME *name = (DISPLAYCONFIG_SOURCE_DEVICE_NAME *)packet;
+            strcpyW( name->viewGdiDeviceName, ADAPTER_PREFIX );
+            name->viewGdiDeviceName[11] = '1';
+            name->viewGdiDeviceName[12] = '\0';
+            return ERROR_SUCCESS;
+        }
+        case DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME:
+        {
+            DISPLAYCONFIG_TARGET_DEVICE_NAME *name = (DISPLAYCONFIG_TARGET_DEVICE_NAME *)packet;
+        }
+    }
     return ERROR_NOT_SUPPORTED;
 }
 
@@ -4281,6 +4373,12 @@ BOOL WINAPI EnumDisplayDevicesW( LPCWSTR device, DWORD index, DISPLAY_DEVICEW *i
                                                            sizeof(bufferW), NULL ))
                     goto done;
                 lstrcpyW( info->DeviceID, bufferW );
+
+                info->DeviceID[8] = '1';
+                info->DeviceID[11] = '2';
+                info->DeviceID[17] = '1';
+                info->DeviceID[18] = 'C';
+                info->DeviceID[20] = '2';
             }
         }
     }
