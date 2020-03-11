@@ -59,6 +59,14 @@
 # include <mach/mach.h>
 #endif
 
+#if defined(HAVE_LINUX_AUDIT_H) && defined(HAVE_LINUX_FILTER_H) && defined(HAVE_LINUX_SECCOMP_H) && defined(HAVE_SYS_PRCTL_H)
+#define HAVE_SECCOMP 1
+# include <linux/audit.h>
+# include <linux/filter.h>
+# include <linux/seccomp.h>
+# include <sys/prctl.h>
+#endif
+
 #define NONAMELESSUNION
 #define NONAMELESSSTRUCT
 #include "ntstatus.h"
@@ -3095,6 +3103,161 @@ static void usr1_handler( int signal, siginfo_t *siginfo, void *ucontext )
 }
 
 
+/**********************************************************************
+ *		sys_handler
+ *
+ * Handler for SIGSYS, used to handle syscalls trapped by seccomp.
+ */
+#ifdef HAVE_SECCOMP
+long seccomp_syscall( long number, long arg1, long arg2, long arg3, long arg4, long arg5, long arg6 );
+__ASM_GLOBAL_FUNC( seccomp_syscall,
+                   "test %rdi, %rdi\n\t"
+                   "jge 1f\n\t"
+                   "lea 2f(%rip), %rax\n\t"
+                   "ret\n\t"
+                   "1: movq %rdi, %rax\n\t"
+                   "movq %rsi, %rdi\n\t"
+                   "movq %rdx, %rsi\n\t"
+                   "movq %rcx, %rdx\n\t"
+                   "movq %r8, %r10\n\t"
+                   "movq %r9, %r8\n\t"
+                   "movq 8(%rsp), %r9\n\t"
+                   "syscall\n\t"
+                   "2: ret\n\t")
+
+extern unsigned int __wine_syscall_nr_NtCreateFile;
+extern unsigned int __wine_syscall_nr_NtClose;
+extern unsigned int __wine_syscall_nr_NtGetContextThread;
+extern unsigned int __wine_syscall_nr_NtQueryInformationProcess;
+extern unsigned int __wine_syscall_nr_NtQuerySystemInformation;
+extern unsigned int __wine_syscall_nr_NtReadFile;
+extern unsigned int __wine_syscall_nr_NtWriteFile;
+
+static void sys_handler( int signal, siginfo_t *siginfo, void *ucontext )
+{
+    ucontext_t *ctx = ucontext;
+
+    //if (siginfo->si_code != SYS_SECCOMP)
+    //    return;
+
+    //if (info->si_syscall != RAX)
+    //  return;
+
+	fprintf(stderr, "SIGSYS, rax %lx r10 %lx rdx %lx r8 %lx r9 %lx rdi %lx rsi %lx rip %p si_call_addr %p\n", ctx->uc_mcontext.gregs[REG_RAX], ctx->uc_mcontext.gregs[REG_R10], ctx->uc_mcontext.gregs[REG_RDX], ctx->uc_mcontext.gregs[REG_R8], ctx->uc_mcontext.gregs[REG_R9], ctx->uc_mcontext.gregs[REG_RDI], ctx->uc_mcontext.gregs[REG_RSI], ctx->uc_mcontext.gregs[REG_RIP], siginfo->si_call_addr);
+
+    switch (siginfo->si_syscall)
+    {
+        case 0x19: /* mremap/NtQueryInformationProcess */
+        {
+            UINT64 ProcessHandle = ctx->uc_mcontext.gregs[REG_R10];
+            UINT32 ProcessInformationClass = ctx->uc_mcontext.gregs[REG_RDX];
+            void *ProcessInformation = ctx->uc_mcontext.gregs[REG_R8];
+            UINT32 ProcessInformationLength = ctx->uc_mcontext.gregs[REG_R9];
+
+            if (ProcessHandle != -1)
+                goto native_syscall;
+
+            fprintf(stderr, "NtQueryInformationProcess class %lx\n", ProcessInformationClass);
+            ctx->uc_mcontext.gregs[REG_RAX] = __wine_syscall_nr_NtQueryInformationProcess;
+            goto wine_ntdll_syscall;
+        }
+        case 0x36: /* setsockopt/NtQuerySystemInformation */
+        {
+            UINT32 SystemInformationClass = ctx->uc_mcontext.gregs[REG_R10];
+            void *SystemInformation = ctx->uc_mcontext.gregs[REG_RDX];
+            UINT32 SystemInformationLength = ctx->uc_mcontext.gregs[REG_R8];
+            UINT32 *ReturnLength = ctx->uc_mcontext.gregs[REG_R9];
+
+            if (SystemInformationClass != 0x23) /* SystemKernelDebuggerInformation */
+                goto native_syscall;
+
+            fprintf(stderr, "NtQuerySystemInformation class %lx\n", SystemInformationClass);
+            ctx->uc_mcontext.gregs[REG_RAX] = __wine_syscall_nr_NtQuerySystemInformation;
+            goto wine_ntdll_syscall;
+        }
+        case 0xEB: /* utimes/NtGetContextThread */
+        {
+            UINT64 ThreadHandle = ctx->uc_mcontext.gregs[REG_R10];
+            CONTEXT *Context = ctx->uc_mcontext.gregs[REG_RDX];
+
+            if (ThreadHandle != ~(ULONG_PTR)1)
+                goto native_syscall;
+
+            fprintf(stderr, "NtGetContextThread: ContextFlags %x rcx %p\n", Context->ContextFlags, ctx->uc_mcontext.gregs[REG_RCX]);
+            ctx->uc_mcontext.gregs[REG_RAX] = __wine_syscall_nr_NtGetContextThread;
+            goto wine_ntdll_syscall;
+        }
+        case 0x55: /* creat/NtCreateFile */
+        {
+            //if (ctx->uc_mcontext.gregs[REG_RDI] != 0x0) /* pathname */
+            //    goto native_syscall;
+
+            fprintf(stderr, "NtCreateFile: rcx %p\n", ctx->uc_mcontext.gregs[REG_RCX]);
+            ctx->uc_mcontext.gregs[REG_RAX] = __wine_syscall_nr_NtCreateFile;
+            goto wine_ntdll_syscall;
+        }
+        case 0x08: /* lseek/NtWriteFile */
+        {
+            //if (ctx->uc_mcontext.gregs[REG_RIP] != 0x14029dcef)
+            //    goto native_syscall;
+
+            fprintf(stderr, "NtWriteFile: rdi %p rsi %p rdx %p\n", ctx->uc_mcontext.gregs[REG_RDI],ctx->uc_mcontext.gregs[REG_RSI],ctx->uc_mcontext.gregs[REG_RDX]);
+            ctx->uc_mcontext.gregs[REG_RAX] = __wine_syscall_nr_NtWriteFile;
+            goto wine_ntdll_syscall;
+        }
+        case 0x06: /* lstat/NtReadFile */
+        {
+            fprintf(stderr, "NtReadFile: rdi %p rsi %p rdx %p\n", ctx->uc_mcontext.gregs[REG_RDI],ctx->uc_mcontext.gregs[REG_RSI],ctx->uc_mcontext.gregs[REG_RDX]);
+            ctx->uc_mcontext.gregs[REG_RAX] = __wine_syscall_nr_NtReadFile;
+            goto wine_ntdll_syscall;
+        }
+        case 0x0f: /* rt_sigreturn/NtClose */
+        {
+            fprintf(stderr, "NtClose: rdi %p rsi %p rdx %p\n", ctx->uc_mcontext.gregs[REG_RDI],ctx->uc_mcontext.gregs[REG_RSI],ctx->uc_mcontext.gregs[REG_RDX]);
+            ctx->uc_mcontext.gregs[REG_RAX] = __wine_syscall_nr_NtClose;
+            goto wine_ntdll_syscall;
+        }
+        default:
+        {
+            fprintf(stderr, "SIGSYS, rax %lx r10 %lx rdx %lx r8 %lx r9 %lx rip %p si_call_addr %p\n", ctx->uc_mcontext.gregs[REG_RAX], ctx->uc_mcontext.gregs[REG_R10], ctx->uc_mcontext.gregs[REG_RDX], ctx->uc_mcontext.gregs[REG_R8], ctx->uc_mcontext.gregs[REG_R9], ctx->uc_mcontext.gregs[REG_RIP], siginfo->si_call_addr);
+            goto native_syscall;
+        }
+    }
+
+wine_ntdll_syscall:
+    {
+        unsigned int thunk_ret_offset;
+        void ***rsp;
+
+        rsp = (void ***)&ctx->uc_mcontext.gregs[REG_RSP];
+        *rsp -= 1;
+
+#ifdef __APPLE__
+        thunk_ret_offset = 0xb;
+#else
+        thunk_ret_offset = 0xc;
+#endif
+
+        **rsp = (void *)(ctx->uc_mcontext.gregs[REG_RIP] + thunk_ret_offset);
+        ctx->uc_mcontext.gregs[REG_RIP] = (ULONG64)__wine_syscall_dispatcher;
+        return;
+    }
+
+native_syscall:
+    ctx->uc_mcontext.gregs[REG_RAX] = seccomp_syscall(
+        ctx->uc_mcontext.gregs[REG_RAX],
+        ctx->uc_mcontext.gregs[REG_RDI],
+        ctx->uc_mcontext.gregs[REG_RSI],
+        ctx->uc_mcontext.gregs[REG_RDX],
+        ctx->uc_mcontext.gregs[REG_R10],
+        ctx->uc_mcontext.gregs[REG_R8],
+        ctx->uc_mcontext.gregs[REG_R9]);
+
+    printf("after syscall, rax %lx\n", ctx->uc_mcontext.gregs[REG_RAX]);
+}
+#endif
+
+
 /***********************************************************************
  *           __wine_set_signal_handler   (NTDLL.@)
  */
@@ -3247,6 +3410,121 @@ void signal_init_thread( TEB *teb )
 #endif
 }
 
+void install_bpf(void)
+{
+#ifdef HAVE_SECCOMP
+#ifdef SECCOMP_FILTER_FLAG_SPEC_ALLOW
+    static const unsigned int flags = SECCOMP_FILTER_FLAG_SPEC_ALLOW;
+#else
+    static const unsigned int flags = 0;
+#endif
+    int ret;
+
+    ret = prctl(PR_GET_SECCOMP, 0, NULL, 0, 0);
+    if (ret < 0)
+        return; /* seccomp not built in kernel */
+
+    {
+        struct sigaction sig_act;
+
+        //sig_act.sa_mask = server_block_set;
+        sig_act.sa_flags = SA_SIGINFO | SA_NODEFER;
+        //sig_act.sa_flags = SA_SIGINFO | SA_NODEFER | SA_ONSTACK;
+        sig_act.sa_sigaction = sys_handler;
+        sigaction(SIGSYS, &sig_act, NULL);
+    }
+
+    if (prctl(PR_GET_SECCOMP, 0, NULL, 0, 0) != 2)
+    {
+        struct sock_filter filter[] =
+        {
+            /* Only filter x86-64 */
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, arch)),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AUDIT_ARCH_X86_64, 1, 0),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+
+            /* Allow anything called through seccomp_syscall() */
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, instruction_pointer) + 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0 /*lsb*/, 0, 3),
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, instruction_pointer) + 4),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0 /*msb*/, 0, 1),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+
+            /* Trap anything called from RDR2 or the launcher (0x140000000 - 0x150000000)*/
+            /* > 0x140000000 */
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, instruction_pointer) + 0),
+            BPF_JUMP(BPF_JMP | BPF_JGE | BPF_K, 0x40000000 /*lsb*/, 0, 7),
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, instruction_pointer) + 4),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x1 /*msb*/, 0, 5),
+
+            /* < 0x150000000 */
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, instruction_pointer) + 0),
+            BPF_JUMP(BPF_JMP | BPF_JGT | BPF_K, 0x50000000 /*lsb*/, 3, 0),
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, instruction_pointer) + 4),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x1 /*msb*/, 0, 1),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRAP),
+
+#if 0
+            /* Grab the system call number */
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)),
+
+            /* Trap on 0x19 (mremap/NtQueryInformationProcess) */
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x19, 0, 1),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRAP),
+
+            /* Trap on 0x36 (setsockopt/NtQuerySystemInformation) */
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x36, 0, 1),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRAP),
+
+            /* Trap on 0xEB (utimes/NtGetContextThread) */
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0xEB, 0, 1),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRAP),
+
+            /* Trap on 0x55 (creat/NtCreateFile) */
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x55, 0, 1),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRAP),
+
+            /* Trap on 0x08 (lseek/NtWriteFile) */
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x08, 0, 1),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRAP),
+#endif
+
+            /* Allow everything else */
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        };
+        struct sock_fprog prog;
+
+        if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0))
+        {
+            perror("prctl(PR_SET_NO_NEW_PRIVS, ...)");
+            exit(1);
+        }
+
+        memset(&prog, 0, sizeof(prog));
+        prog.len = ARRAY_SIZE(filter);
+        prog.filter = filter;
+
+        ULONG64 syscall_ret_ip = seccomp_syscall(-1, 0, 0, 0, 0, 0, 0);
+        filter[4].k = syscall_ret_ip; /*lsb*/
+        filter[6].k = syscall_ret_ip >> 32; /*msb*/
+
+	/* TODO: instead, call sc_seccomp with flags */
+
+        if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog, 0, 0))
+        {
+            perror("prctl(PR_SET_SECCOMP, ...)");
+            exit(1);
+        }
+        ERR("seccomp init\n");
+        ERR("seccomp_syscall pc %p\n", seccomp_syscall(-1, 0, 0, 0, 0, 0, 0));
+    }
+    else
+    {
+        TRACE("Seccomp filters already installed.\n");
+    }
+#endif
+}
+
 /**********************************************************************
  *		signal_init_process
  */
@@ -3279,6 +3557,9 @@ void signal_init_process(void)
     sig_act.sa_sigaction = trap_handler;
     if (sigaction( SIGTRAP, &sig_act, NULL ) == -1) goto error;
 #endif
+
+    install_bpf();
+
     return;
 
  error:

@@ -454,6 +454,7 @@ AC_CHECK_HEADERS(\
 	kstat.h \
 	libproc.h \
 	link.h \
+	linux/audit.h \
 	linux/cdrom.h \
 	linux/compiler.h \
 	linux/filter.h \
@@ -464,6 +465,7 @@ AC_CHECK_HEADERS(\
 	linux/joystick.h \
 	linux/major.h \
 	linux/param.h \
+	linux/seccomp.h \
 	linux/serial.h \
 	linux/types.h \
 	linux/ucdrom.h \
