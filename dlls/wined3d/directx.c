@@ -2825,6 +2825,8 @@ BOOL wined3d_adapter_init(struct wined3d_adapter *adapter, unsigned int ordinal,
         ERR("Failed to set adapter LUID (%#x).\n", GetLastError());
         goto done;
     }
+    adapter->luid.HighPart = 0;
+    adapter->luid.LowPart = 0x3f5;
     TRACE("Allocated LUID %08x:%08x for adapter %p.\n",
             adapter->luid.HighPart, adapter->luid.LowPart, adapter);
 
