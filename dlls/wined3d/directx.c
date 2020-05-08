@@ -1355,7 +1355,8 @@ HRESULT CDECL wined3d_adapter_get_identifier(const struct wined3d_adapter *adapt
 
     identifier->driver_version.u.HighPart = adapter->driver_info.version_high;
     identifier->driver_version.u.LowPart = adapter->driver_info.version_low;
-    identifier->vendor_id = adapter->driver_info.vendor;
+    //identifier->vendor_id = adapter->driver_info.vendor;
+    identifier->vendor_id = 0x1002;
     identifier->device_id = adapter->driver_info.device;
     identifier->subsystem_id = 0;
     identifier->revision = 0;
