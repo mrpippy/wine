@@ -567,6 +567,14 @@ static void output_syscall_thunks_x64( DLLSPEC *spec )
         output ("\t%s %s\n", get_asm_ptr_keyword(), asm_name(odp->impl_name) );
     }
 
+    output( "\n/* syscall numbers */\n\n" );
+    for (i = 0; i < spec->nb_syscalls; i++)
+    {
+        ORDDEF *odp = spec->syscalls[i];
+        output( "%s\n", asm_globl(strmake("__wine_syscall_nr_%s", odp->impl_name)) );
+        output( "\t.long %u\n", i );
+    }
+
     output( "\n/* syscall argument stack size table */\n\n" );
     output( "\t.data\n" );
     output( "%s\n", asm_globl("__wine_syscall_stack_size") );
