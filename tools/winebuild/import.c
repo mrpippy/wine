@@ -1502,7 +1502,26 @@ void output_syscalls( DLLSPEC *spec )
             /* Legends of Runeterra hooks the first system call return instruction, and
              * depends on us returning to it. Adjust the return address accordingly. */
             output( "\tsubq $0xb,0x8(%%rbp)\n" );
-            output( "\tsubq $0xf000,%%rax\n" );
+
+            output( "\tcmpq $0xf000,%%rax\n" );
+            output( "\tjae 5f\n" );
+
+            output( "\tpushq %%rdx\n" );
+            output( "\tpushq %%r8\n" );
+            output( "\tpushq %%r9\n" );
+            output( "\tpushq %%r10\n" );
+            output( "\tmovq %%rax,%%rdi\n" );
+            output( "\tcall %s\n", asm_name("__wine_syscall_nr_from_nt") );
+            output( "\tpopq %%r10\n" );
+            output( "\tpopq %%r9\n" );
+            output( "\tpopq %%r8\n" );
+            output( "\tpopq %%rdx\n" );
+
+            /* INVALID_SYSCALL returned by __wine_syscall_nr_from_nt when it fails */
+            output( "\tcmpq $0x0fff,%%rax\n" );
+            output( "\tje 4f\n" );
+
+            output( "5:\tsubq $0xf000,%%rax\n" );
             output( "\tcmpq $%u,%%rax\n", count );
             output( "\tjae 4f\n" );
             output( "\tleaq .Lsyscall_args(%%rip),%%rcx\n" );

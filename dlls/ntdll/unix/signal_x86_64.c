@@ -2075,6 +2075,7 @@ static void install_bpf(struct sigaction *sig_act)
 #       define SECCOMP_SET_MODE_FILTER 1
 #   endif
     static const unsigned int flags = SECCOMP_FILTER_FLAG_SPEC_ALLOW;
+    /*
     static struct sock_filter filter[] =
     {
        BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
@@ -2082,6 +2083,26 @@ static void install_bpf(struct sigaction *sig_act)
        BPF_JUMP(BPF_JMP | BPF_JGE | BPF_K, 0xf000, 0, 1),
        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRAP),
        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    };
+    */
+    static struct sock_filter filter[] =
+    {
+        /* Trap anything called from RDR2 or the launcher (0x140000000 - 0x150000000)*/
+        /* > 0x140000000 */
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, instruction_pointer) + 0),
+        BPF_JUMP(BPF_JMP | BPF_JGE | BPF_K, 0x40000000 /*lsb*/, 0, 7),
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, instruction_pointer) + 4),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x1 /*msb*/, 0, 5),
+
+        /* < 0x150000000 */
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, instruction_pointer) + 0),
+        BPF_JUMP(BPF_JMP | BPF_JGT | BPF_K, 0x50000000 /*lsb*/, 3, 0),
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, instruction_pointer) + 4),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x1 /*msb*/, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRAP),
+
+        /* Allow everything else */
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
     };
     struct sock_fprog prog;
     int ret;
